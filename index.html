@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0a66c2" />
+  <title>Agenda</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Agenda</div>
+    <div class="top-actions">
+      <button id="googleBtn" class="btn secondary">Conectar Google</button>
+      <button id="syncBtn" class="btn">Sincronizar</button>
+    </div>
+  </header>
+
+  <div class="shell">
+    <aside class="sidebar">
+      <nav id="nav">
+        <button class="nav-item active" data-view="today">Hoy</button>
+        <button class="nav-item" data-view="calendar">Calendario</button>
+        <button class="nav-item" data-view="tasks">Pendientes</button>
+        <button class="nav-item" data-view="projects">Proyectos</button>
+        <button class="nav-item" data-view="goals">Objetivos de vida</button>
+        <button class="nav-item" data-view="journal">Mi diario</button>
+        <button class="nav-item" data-view="ideas">Ideas</button>
+        <button class="nav-item" data-view="stats">Estadísticas</button>
+      </nav>
+    </aside>
+
+    <main id="app" class="content"></main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <dialog id="setupDialog" class="modal">
+    <form method="dialog" id="setupForm">
+      <h2>Conectar Google</h2>
+      <p class="muted">Pega tu OAuth 2.0 Client ID de Google Cloud. Se guarda solo en este dispositivo.</p>
+      <label>Google OAuth Client ID
+        <input id="clientIdInput" required placeholder="123...apps.googleusercontent.com" />
+      </label>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn secondary">Cancelar</button>
+        <button id="saveClientId" value="default" class="btn">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="entityDialog" class="modal">
+    <form method="dialog" id="entityForm">
+      <h2 id="entityTitle">Nuevo</h2>
+      <div id="entityFields"></div>
+      <div class="dialog-actions">
+        <button value="cancel" class="btn secondary">Cancelar</button>
+        <button id="entitySave" value="default" class="btn">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
