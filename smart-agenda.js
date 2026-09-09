@@ -5,6 +5,7 @@ const TYPE_LABELS = {
   reminder: 'Recordatorio',
   notice: 'Aviso'
 };
+const ACCORDION_KEY = 'agenda_today_accordion:';
 
 const normalizeTitle = value => String(value || '')
   .normalize('NFD')
@@ -73,6 +74,17 @@ function savedOverride(title) {
   return SMART_TYPES.includes(value) ? value : null;
 }
 
+function accordionOpen(key, defaultOpen) {
+  const saved = localStorage.getItem(`${ACCORDION_KEY}${key}`);
+  return saved === null ? defaultOpen : saved === '1';
+}
+
+function rememberAccordion(details, key) {
+  details.addEventListener('toggle', () => {
+    localStorage.setItem(`${ACCORDION_KEY}${key}`, details.open ? '1' : '0');
+  });
+}
+
 function classifyEvent(title, isAllDay) {
   const manual = savedOverride(title);
   if (manual) return { type: manual, source: 'manual', confidence: 1 };
@@ -91,18 +103,51 @@ function classifyEvent(title, isAllDay) {
     return { type: 'notice', source: 'rules', confidence: 0.82 };
   }
 
-  // Fallback conservador: una entrada de Calendar con hora se mantiene visible
-  // como compromiso para no esconder una cita potencialmente importante.
   return { type: 'commitment', source: 'fallback', confidence: 0.62 };
 }
 
-function makeGroup(title, type, cards) {
+function routineMeta(cards) {
+  const now = new Date();
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const timed = cards.map(card => {
+    const raw = card.querySelector('.event-time')?.textContent?.trim() || '';
+    const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) return null;
+    return {
+      card,
+      raw,
+      minutes: Number(match[1]) * 60 + Number(match[2]),
+      title: card.querySelector('.row-title')?.textContent?.trim() || ''
+    };
+  }).filter(Boolean).sort((a, b) => a.minutes - b.minutes);
+
+  const next = timed.find(item => item.minutes >= currentMinutes);
+  const passed = timed.filter(item => item.minutes < currentMinutes).length;
+  if (next) return `${passed ? `${passed} pasadas · ` : ''}Próxima ${next.raw}`;
+  return timed.length ? `${timed.length} pasadas` : '';
+}
+
+function makeGroup(title, type, cards, defaultOpen = false) {
   if (!cards.length) return null;
-  const group = document.createElement('div');
-  group.className = `smart-event-group smart-${type}`;
-  group.innerHTML = `<div class="smart-group-title"><span>${title}</span><strong>${cards.length}</strong></div>`;
-  cards.forEach(card => group.append(card));
-  return group;
+  const details = document.createElement('details');
+  details.className = `smart-event-group smart-${type} smart-accordion`;
+  details.dataset.accordion = type;
+  details.open = accordionOpen(type, defaultOpen);
+
+  const meta = type === 'routine' ? routineMeta(cards) : '';
+  details.innerHTML = `
+    <summary class="smart-group-title">
+      <span>${title}</span>
+      ${meta ? `<small class="smart-group-meta">${meta}</small>` : '<small></small>'}
+      <strong>${cards.length}</strong>
+      <span class="smart-chevron" aria-hidden="true">›</span>
+    </summary>
+    <div class="smart-group-body"></div>`;
+
+  const body = details.querySelector('.smart-group-body');
+  cards.forEach(card => body.append(card));
+  rememberAccordion(details, type);
+  return details;
 }
 
 function decorateEvent(card) {
@@ -146,8 +191,6 @@ function decorateEvent(card) {
 function smartEvents(section) {
   if (!section || section.dataset.smartEvents === '1') return;
 
-  // Puede ejecutarse otra vez después de una corrección manual. Recuperamos
-  // las tarjetas aunque ya estén dentro de grupos inteligentes.
   const cards = [...section.querySelectorAll('.event-card')];
   if (!cards.length) {
     section.dataset.smartEvents = '1';
@@ -171,14 +214,14 @@ function smartEvents(section) {
 
   const titleBar = section.querySelector('.section-title');
   const order = [
-    ['Compromisos', 'commitment'],
-    ['Avisos del día', 'notice'],
-    ['Recordatorios', 'reminder'],
-    ['Rutinas', 'routine']
+    ['Compromisos', 'commitment', true],
+    ['Avisos del día', 'notice', false],
+    ['Recordatorios', 'reminder', false],
+    ['Rutinas', 'routine', false]
   ];
 
-  order.forEach(([label, type]) => {
-    const group = makeGroup(label, type, groups[type]);
+  order.forEach(([label, type, defaultOpen]) => {
+    const group = makeGroup(label, type, groups[type], defaultOpen);
     if (group) section.append(group);
   });
 
@@ -193,6 +236,24 @@ function smartEvents(section) {
   }
 
   section.dataset.smartEvents = '1';
+}
+
+function taskAccordion(label, key, rows, defaultOpen = true) {
+  const details = document.createElement('details');
+  details.className = `smart-task-current smart-accordion smart-task-${key}`;
+  details.open = accordionOpen(`task-${key}`, defaultOpen);
+  details.innerHTML = `
+    <summary class="smart-group-title">
+      <span>${label}</span>
+      <small></small>
+      <strong>${rows.length}</strong>
+      <span class="smart-chevron" aria-hidden="true">›</span>
+    </summary>
+    <div class="smart-group-body"></div>`;
+  const body = details.querySelector('.smart-group-body');
+  rows.forEach(row => body.append(row));
+  rememberAccordion(details, `task-${key}`);
+  return details;
 }
 
 function smartTasks(section, rangeLabel) {
@@ -211,12 +272,8 @@ function smartTasks(section, rangeLabel) {
   rows.forEach(row => row.remove());
 
   if (current.length) {
-    const currentGroup = document.createElement('div');
-    currentGroup.className = 'smart-task-current';
     const label = rangeLabel === 'Hoy' ? 'Pendientes de hoy' : `Pendientes · ${rangeLabel}`;
-    currentGroup.innerHTML = `<div class="smart-group-title"><span>${label}</span><strong>${current.length}</strong></div>`;
-    current.forEach(row => currentGroup.append(row));
-    section.append(currentGroup);
+    section.append(taskAccordion(label, 'current', current, true));
   } else {
     const empty = document.createElement('div');
     empty.className = 'empty smart-no-current';
@@ -226,12 +283,19 @@ function smartTasks(section, rangeLabel) {
 
   if (overdue.length) {
     const details = document.createElement('details');
-    details.className = 'smart-overdue';
-    details.innerHTML = `<summary><span>Atrasados</span><strong>${overdue.length}</strong><small>Mostrar</small></summary>`;
-    const body = document.createElement('div');
-    body.className = 'smart-overdue-body';
+    details.className = 'smart-overdue smart-accordion';
+    details.open = accordionOpen('overdue', false);
+    details.innerHTML = `
+      <summary class="smart-group-title">
+        <span>Atrasados</span>
+        <small></small>
+        <strong>${overdue.length}</strong>
+        <span class="smart-chevron" aria-hidden="true">›</span>
+      </summary>
+      <div class="smart-overdue-body smart-group-body"></div>`;
+    const body = details.querySelector('.smart-overdue-body');
     overdue.forEach(row => body.append(row));
-    details.append(body);
+    rememberAccordion(details, 'overdue');
     section.append(details);
   }
 
