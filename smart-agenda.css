@@ -1,0 +1,170 @@
+.smart-day-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+  margin: -.1rem 0 1rem;
+}
+
+.smart-day-summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding: .45rem .7rem;
+  border: 1px solid rgba(148, 163, 184, .24);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .035);
+  font-size: .88rem;
+}
+
+.smart-summary-overdue {
+  border-color: rgba(239, 68, 68, .28) !important;
+}
+
+.smart-event-summary,
+.smart-task-summary {
+  margin-left: .65rem;
+  font-size: .78rem;
+  font-weight: 600;
+  opacity: .68;
+}
+
+.smart-event-group,
+.smart-task-current {
+  margin-top: .8rem;
+}
+
+.smart-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin: .8rem 0 .35rem;
+  padding: .35rem .15rem;
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  opacity: .76;
+}
+
+.smart-group-title strong {
+  min-width: 1.55rem;
+  height: 1.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, .14);
+  font-size: .74rem;
+}
+
+.smart-event-card {
+  position: relative;
+}
+
+.smart-type-tag {
+  margin-top: .22rem;
+  padding: .13rem .42rem;
+  border: 1px solid rgba(148, 163, 184, .22);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: .69rem;
+  line-height: 1.2;
+  opacity: .68;
+  cursor: pointer;
+}
+
+.smart-type-tag:hover {
+  opacity: 1;
+  border-color: rgba(148, 163, 184, .5);
+}
+
+.smart-event-card[data-smart-type="commitment"] .smart-type-tag {
+  border-color: rgba(59, 130, 246, .38);
+}
+
+.smart-event-card[data-smart-type="routine"] .smart-type-tag {
+  border-color: rgba(16, 185, 129, .38);
+}
+
+.smart-event-card[data-smart-type="reminder"] .smart-type-tag {
+  border-color: rgba(245, 158, 11, .38);
+}
+
+.smart-event-card[data-smart-type="notice"] .smart-type-tag {
+  border-color: rgba(168, 85, 247, .38);
+}
+
+.smart-overdue {
+  margin-top: .85rem;
+  border-top: 1px solid rgba(148, 163, 184, .16);
+  padding-top: .55rem;
+}
+
+.smart-overdue summary {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: .7rem;
+  cursor: pointer;
+  list-style: none;
+  padding: .55rem .2rem;
+  font-weight: 700;
+}
+
+.smart-overdue summary::-webkit-details-marker {
+  display: none;
+}
+
+.smart-overdue summary strong {
+  min-width: 1.65rem;
+  height: 1.65rem;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, .12);
+  font-size: .78rem;
+}
+
+.smart-overdue summary small {
+  font-size: .72rem;
+  font-weight: 600;
+  opacity: .62;
+}
+
+.smart-overdue[open] summary small {
+  font-size: 0;
+}
+
+.smart-overdue[open] summary small::after {
+  content: 'Ocultar';
+  font-size: .72rem;
+}
+
+.smart-overdue-body {
+  padding-top: .15rem;
+}
+
+.smart-no-current {
+  margin-top: .65rem;
+}
+
+@media (max-width: 700px) {
+  .smart-event-summary,
+  .smart-task-summary {
+    display: block;
+    margin: .2rem 0 0;
+  }
+
+  .smart-day-summary {
+    gap: .4rem;
+  }
+
+  .smart-day-summary span {
+    font-size: .8rem;
+    padding: .38rem .58rem;
+  }
+}
