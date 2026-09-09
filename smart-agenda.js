@@ -91,8 +91,8 @@ function classifyEvent(title, isAllDay) {
     return { type: 'notice', source: 'rules', confidence: 0.82 };
   }
 
-  // Conservative fallback: a timed Calendar entry is treated as a real commitment
-  // so the smart view never hides a potentially important appointment.
+  // Fallback conservador: una entrada de Calendar con hora se mantiene visible
+  // como compromiso para no esconder una cita potencialmente importante.
   return { type: 'commitment', source: 'fallback', confidence: 0.62 };
 }
 
@@ -134,9 +134,10 @@ function decorateEvent(card) {
     const current = SMART_TYPES.indexOf(card.dataset.smartType);
     const nextType = SMART_TYPES[(current + 1) % SMART_TYPES.length];
     localStorage.setItem(overrideKey(title), nextType);
-    const smartRoot = card.closest('[data-smart-events]');
-    if (smartRoot) smartRoot.removeAttribute('data-smart-events');
-    applySmartToday(true);
+    const section = card.closest('section.card');
+    if (section) section.removeAttribute('data-smart-events');
+    document.querySelector('#app .smart-day-summary')?.remove();
+    applySmartToday();
   };
 
   return classification.type;
@@ -145,11 +146,16 @@ function decorateEvent(card) {
 function smartEvents(section) {
   if (!section || section.dataset.smartEvents === '1') return;
 
-  const cards = [...section.querySelectorAll(':scope > .event-card')];
+  // Puede ejecutarse otra vez después de una corrección manual. Recuperamos
+  // las tarjetas aunque ya estén dentro de grupos inteligentes.
+  const cards = [...section.querySelectorAll('.event-card')];
   if (!cards.length) {
     section.dataset.smartEvents = '1';
     return;
   }
+
+  cards.forEach(card => section.append(card));
+  section.querySelectorAll('.smart-event-group').forEach(node => node.remove());
 
   const groups = {
     commitment: [],
@@ -164,8 +170,6 @@ function smartEvents(section) {
   });
 
   const titleBar = section.querySelector('.section-title');
-  section.querySelectorAll('.smart-event-group').forEach(node => node.remove());
-
   const order = [
     ['Compromisos', 'commitment'],
     ['Avisos del día', 'notice'],
@@ -262,19 +266,11 @@ function addDaySummary(eventSection, taskSection) {
   pageHead.insertAdjacentElement('afterend', summary);
 }
 
-function applySmartToday(force = false) {
+function applySmartToday() {
   const app = document.querySelector('#app');
   if (!app) return;
   const heading = app.querySelector('.page-head h1');
   if (!heading || heading.textContent.trim() !== 'Hoy') return;
-
-  if (force) {
-    app.querySelectorAll('[data-smart-events], [data-smart-tasks]').forEach(node => {
-      node.removeAttribute('data-smart-events');
-      node.removeAttribute('data-smart-tasks');
-    });
-    app.querySelector('.smart-day-summary')?.remove();
-  }
 
   const cards = [...app.querySelectorAll('.grid.two > section.card')];
   const eventSection = cards.find(section => section.querySelector('.event-card') || section.querySelector('.section-title h2')?.textContent.trim() === 'Eventos');
