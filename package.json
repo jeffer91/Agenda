@@ -41,6 +41,7 @@
       "styles.css",
       "manifest.json",
       "service-worker.js",
+      "icon.svg",
       "electron/**/*",
       "package.json"
     ],
