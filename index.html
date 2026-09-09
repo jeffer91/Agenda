@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#0a66c2" />
+  <meta name="theme-color" content="#1769aa" />
   <title>Agenda</title>
   <link rel="manifest" href="./manifest.json" />
   <link rel="stylesheet" href="./styles.css" />
@@ -12,34 +12,34 @@
 <body>
   <header class="topbar">
     <div class="brand">Agenda</div>
-    <div class="top-actions">
-      <button id="googleBtn" class="btn secondary">Conectar Google</button>
-      <button id="syncBtn" class="btn">Sincronizar</button>
+    <div class="top-actions" aria-label="Conexiones">
+      <button id="googleBtn" type="button" class="btn secondary">Conectar Google</button>
+      <button id="syncBtn" type="button" class="btn">Sincronizar</button>
     </div>
   </header>
 
   <div class="shell">
     <aside class="sidebar">
-      <nav id="nav">
-        <button class="nav-item active" data-view="today">Hoy</button>
-        <button class="nav-item" data-view="calendar">Calendario</button>
-        <button class="nav-item" data-view="tasks">Pendientes</button>
-        <button class="nav-item" data-view="projects">Proyectos</button>
-        <button class="nav-item" data-view="goals">Objetivos de vida</button>
-        <button class="nav-item" data-view="journal">Mi diario</button>
-        <button class="nav-item" data-view="ideas">Ideas</button>
-        <button class="nav-item" data-view="stats">Estadísticas</button>
+      <nav id="nav" aria-label="Secciones de Agenda">
+        <button type="button" class="nav-item active" data-view="today">Hoy</button>
+        <button type="button" class="nav-item" data-view="calendar">Calendario</button>
+        <button type="button" class="nav-item" data-view="tasks">Pendientes</button>
+        <button type="button" class="nav-item" data-view="projects">Proyectos</button>
+        <button type="button" class="nav-item" data-view="goals">Objetivos de vida</button>
+        <button type="button" class="nav-item" data-view="journal">Mi diario</button>
+        <button type="button" class="nav-item" data-view="ideas">Ideas</button>
+        <button type="button" class="nav-item" data-view="stats">Estadísticas</button>
       </nav>
     </aside>
 
     <main id="app" class="content"></main>
   </div>
 
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
-  <dialog id="setupDialog" class="modal">
+  <dialog id="setupDialog" class="modal" aria-labelledby="setupTitle">
     <form method="dialog" id="setupForm">
-      <h2>Conectar Google</h2>
+      <h2 id="setupTitle">Conectar Google</h2>
       <p class="muted">
         Pega <strong>solo el ID de cliente OAuth 2.0</strong> de tu credencial de tipo
         <strong>Aplicación web</strong>. No necesitas ni debes pegar el secreto del cliente.
@@ -61,19 +61,19 @@
         <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener noreferrer">Abrir clientes OAuth en Google Cloud</a>
       </p>
       <div class="dialog-actions">
-        <button value="cancel" class="btn secondary">Cancelar</button>
-        <button id="saveClientId" value="default" class="btn">Guardar y conectar</button>
+        <button id="setupCancel" type="button" class="btn secondary">Cancelar</button>
+        <button id="saveClientId" type="submit" value="default" class="btn">Guardar y conectar</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="entityDialog" class="modal">
+  <dialog id="entityDialog" class="modal" aria-labelledby="entityTitle">
     <form method="dialog" id="entityForm">
       <h2 id="entityTitle">Nuevo</h2>
       <div id="entityFields"></div>
       <div class="dialog-actions">
-        <button value="cancel" class="btn secondary">Cancelar</button>
-        <button id="entitySave" value="default" class="btn">Guardar</button>
+        <button id="entityCancel" type="button" class="btn secondary">Cancelar</button>
+        <button id="entitySave" type="submit" value="default" class="btn">Guardar</button>
       </div>
     </form>
   </dialog>
