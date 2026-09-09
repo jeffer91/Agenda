@@ -8,6 +8,7 @@ const out = path.join(root, 'www');
 
 const assets = [
   'app.js',
+  'firebase.js',
   'styles.css',
   'manifest.json',
   'native-auth.js'
@@ -27,7 +28,7 @@ for (const asset of assets) {
 
 let serviceWorker = await fs.readFile(path.join(root, 'service-worker.js'), 'utf8');
 serviceWorker = serviceWorker
-  .replace("const CACHE='agenda-v2';", "const CACHE='agenda-android-v1';")
+  .replace("const CACHE='agenda-v3';", "const CACHE='agenda-android-v2';")
   .replace("'./manifest.json']", "'./manifest.json','./native-auth.js']");
 await fs.writeFile(path.join(out, 'service-worker.js'), serviceWorker, 'utf8');
 
