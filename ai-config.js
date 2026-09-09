@@ -1,3 +1,3 @@
 window.AGENDA_AI_CONFIG = {
-  endpoint: ''
+  endpoint: 'https://agenda-ai-jeffer91.onrender.com'
 };
