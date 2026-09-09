@@ -37,6 +37,7 @@
     "files": [
       "index.html",
       "app.js",
+      "firebase.js",
       "styles.css",
       "manifest.json",
       "service-worker.js",
