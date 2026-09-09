@@ -61,7 +61,7 @@
         <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener noreferrer">Abrir clientes OAuth en Google Cloud</a>
       </p>
       <div class="dialog-actions">
-        <button id="setupCancel" type="button" class="btn secondary">Cancelar</button>
+        <button id="setupCancel" type="button" class="btn secondary" onclick="document.getElementById('setupDialog').close('cancel')">Cancelar</button>
         <button id="saveClientId" type="submit" value="default" class="btn">Guardar y conectar</button>
       </div>
     </form>
@@ -72,7 +72,7 @@
       <h2 id="entityTitle">Nuevo</h2>
       <div id="entityFields"></div>
       <div class="dialog-actions">
-        <button id="entityCancel" type="button" class="btn secondary">Cancelar</button>
+        <button id="entityCancel" type="button" class="btn secondary" onclick="document.getElementById('entityDialog').close('cancel')">Cancelar</button>
         <button id="entitySave" type="submit" value="default" class="btn">Guardar</button>
       </div>
     </form>
