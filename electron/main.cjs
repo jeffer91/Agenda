@@ -6,6 +6,7 @@ const path = require('path');
 const HOST = '127.0.0.1';
 const PORT = 4173;
 const ROOT = path.resolve(__dirname, '..');
+const APP_ORIGIN = `http://localhost:${PORT}`;
 
 const PUBLIC_FILES = new Map([
   ['/', 'index.html'],
@@ -14,6 +15,7 @@ const PUBLIC_FILES = new Map([
   ['/firebase.js', 'firebase.js'],
   ['/styles.css', 'styles.css'],
   ['/manifest.json', 'manifest.json'],
+  ['/icon.svg', 'icon.svg'],
   ['/service-worker.js', 'service-worker.js']
 ]);
 
@@ -21,13 +23,14 @@ const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8'
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml; charset=utf-8'
 };
 
 function createServer() {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
-      const pathname = new URL(req.url, `http://localhost:${PORT}`).pathname;
+      const pathname = new URL(req.url, APP_ORIGIN).pathname;
       const relative = PUBLIC_FILES.get(pathname);
 
       if (!relative) {
@@ -46,7 +49,8 @@ function createServer() {
 
         res.writeHead(200, {
           'Content-Type': MIME[path.extname(filePath)] || 'application/octet-stream',
-          'Cache-Control': 'no-cache'
+          'Cache-Control': 'no-cache',
+          'X-Content-Type-Options': 'nosniff'
         });
         res.end(data);
       });
@@ -66,13 +70,21 @@ function isGoogleAuthUrl(url) {
   }
 }
 
+function isLocalAppUrl(url) {
+  try {
+    return new URL(url).origin === APP_ORIGIN;
+  } catch {
+    return false;
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
     height: 920,
     minWidth: 980,
     minHeight: 650,
-    backgroundColor: '#f3f6f8',
+    backgroundColor: '#f4f6f8',
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
@@ -104,7 +116,17 @@ function createWindow() {
     return { action: 'deny' };
   });
 
-  win.loadURL(`http://localhost:${PORT}`);
+  win.webContents.on('will-navigate', (event, url) => {
+    if (isLocalAppUrl(url)) return;
+    event.preventDefault();
+    shell.openExternal(url).catch(() => {});
+  });
+
+  win.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(false);
+  });
+
+  win.loadURL(APP_ORIGIN);
 }
 
 let server;
