@@ -46,3 +46,35 @@ jobs:
           test -f www/service-worker.js
           ! grep -q "accounts.google.com/gsi/client" www/index.html
           grep -q "native-auth.js" www/index.html
+
+  android-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install dependencies metadata
+        run: npm install --ignore-scripts
+
+      - name: Build debug APK
+        run: npm run apk
+
+      - name: Verify APK
+        run: test -f artifacts/Agenda-debug.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Agenda-debug-apk
+          path: artifacts/Agenda-debug.apk
