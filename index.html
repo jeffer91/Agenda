@@ -40,13 +40,29 @@
   <dialog id="setupDialog" class="modal">
     <form method="dialog" id="setupForm">
       <h2>Conectar Google</h2>
-      <p class="muted">Pega tu OAuth 2.0 Client ID de Google Cloud. Se guarda solo en este dispositivo.</p>
+      <p class="muted">
+        Pega <strong>solo el ID de cliente OAuth 2.0</strong> de tu credencial de tipo
+        <strong>Aplicación web</strong>. No necesitas ni debes pegar el secreto del cliente.
+      </p>
+      <p id="oauthHint" class="muted"></p>
       <label>Google OAuth Client ID
-        <input id="clientIdInput" required placeholder="123...apps.googleusercontent.com" />
+        <input
+          id="clientIdInput"
+          required
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="123456789-abc123.apps.googleusercontent.com"
+        />
       </label>
+      <p class="muted" style="font-size:.9rem">
+        El ID termina en <strong>.apps.googleusercontent.com</strong> y se guarda únicamente en este dispositivo.
+      </p>
+      <p class="muted" style="font-size:.9rem">
+        <a href="https://console.cloud.google.com/auth/clients" target="_blank" rel="noopener noreferrer">Abrir clientes OAuth en Google Cloud</a>
+      </p>
       <div class="dialog-actions">
         <button value="cancel" class="btn secondary">Cancelar</button>
-        <button id="saveClientId" value="default" class="btn">Guardar</button>
+        <button id="saveClientId" value="default" class="btn">Guardar y conectar</button>
       </div>
     </form>
   </dialog>
