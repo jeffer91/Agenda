@@ -1,0 +1,49 @@
+name: Validate Agenda
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies metadata
+        run: npm install --ignore-scripts
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check electron/main.cjs
+          node --check native-auth.js
+          node --check scripts/web-server.mjs
+          node --check scripts/prepare-web.mjs
+          node --check scripts/android-setup.mjs
+          node --check scripts/android-build.mjs
+          node --check scripts/android-sha.mjs
+
+      - name: Prepare Android web bundle
+        run: npm run web:prepare
+
+      - name: Validate Android bundle
+        run: |
+          test -f www/index.html
+          test -f www/app.js
+          test -f www/native-auth.js
+          test -f www/service-worker.js
+          ! grep -q "accounts.google.com/gsi/client" www/index.html
+          grep -q "native-auth.js" www/index.html
