@@ -11,6 +11,7 @@ const assets = [
   'firebase.js',
   'styles.css',
   'manifest.json',
+  'icon.svg',
   'native-auth.js'
 ];
 
@@ -28,8 +29,8 @@ for (const asset of assets) {
 
 let serviceWorker = await fs.readFile(path.join(root, 'service-worker.js'), 'utf8');
 serviceWorker = serviceWorker
-  .replace("const CACHE='agenda-v3';", "const CACHE='agenda-android-v2';")
-  .replace("'./manifest.json']", "'./manifest.json','./native-auth.js']");
+  .replace("const CACHE='agenda-v4';", "const CACHE='agenda-android-v3';")
+  .replace("'./icon.svg']", "'./icon.svg','./native-auth.js']");
 await fs.writeFile(path.join(out, 'service-worker.js'), serviceWorker, 'utf8');
 
 console.log('Bundle Android preparado en www/.');
