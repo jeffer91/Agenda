@@ -1,0 +1,8 @@
+node_modules/
+www/
+android/
+artifacts/
+dist-desktop/
+*.log
+.DS_Store
+Thumbs.db
