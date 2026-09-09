@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Agenda">
+  <rect width="512" height="512" rx="112" fill="#1769aa"/>
+  <rect x="112" y="92" width="288" height="328" rx="42" fill="#ffffff"/>
+  <rect x="154" y="151" width="130" height="24" rx="12" fill="#dbe8f2"/>
+  <rect x="154" y="215" width="204" height="20" rx="10" fill="#dbe8f2"/>
+  <rect x="154" y="273" width="204" height="20" rx="10" fill="#dbe8f2"/>
+  <path d="M154 337l36 36 82-91" fill="none" stroke="#237a70" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="344" cy="163" r="23" fill="#c78314"/>
+</svg>
