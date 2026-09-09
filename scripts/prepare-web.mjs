@@ -10,7 +10,6 @@ const assets = [
   'app.js',
   'styles.css',
   'manifest.json',
-  'service-worker.js',
   'native-auth.js'
 ];
 
@@ -25,5 +24,11 @@ await fs.writeFile(path.join(out, 'index.html'), html, 'utf8');
 for (const asset of assets) {
   await fs.copyFile(path.join(root, asset), path.join(out, asset));
 }
+
+let serviceWorker = await fs.readFile(path.join(root, 'service-worker.js'), 'utf8');
+serviceWorker = serviceWorker
+  .replace("const CACHE='agenda-v2';", "const CACHE='agenda-android-v1';")
+  .replace("'./manifest.json']", "'./manifest.json','./native-auth.js']");
+await fs.writeFile(path.join(out, 'service-worker.js'), serviceWorker, 'utf8');
 
 console.log('Bundle Android preparado en www/.');
