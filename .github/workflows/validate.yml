@@ -25,8 +25,12 @@ jobs:
       - name: Install dependencies metadata
         run: npm install --ignore-scripts
 
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Validate JavaScript syntax
         run: |
+          node --check app.js
           node --check electron/main.cjs
           node --check firebase.js
           node --check native-auth.js
@@ -36,11 +40,30 @@ jobs:
           node --check scripts/android-build.mjs
           node --check scripts/android-sha.mjs
 
-      - name: Validate Firebase configuration
+      - name: Validate configuration files
         run: |
+          node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8'))"
+          node -e "JSON.parse(require('fs').readFileSync('capacitor.config.json','utf8'))"
           grep -q "jeff-2f92d" firebase.js
           grep -q "firebase.js" index.html
           grep -q "firebase.js" electron/main.cjs
+          grep -q "icon.svg" manifest.json
+
+      - name: Web smoke test
+        run: |
+          npm run web > /tmp/agenda-web.log 2>&1 &
+          WEB_PID=$!
+          trap 'kill $WEB_PID 2>/dev/null || true' EXIT
+          for i in {1..20}; do
+            if curl -fsS http://localhost:8080/ >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl -fsS http://localhost:8080/ | grep -q "Agenda"
+          curl -fsS http://localhost:8080/app.js | grep -q "syncGoogle"
+          curl -fsS http://localhost:8080/firebase.js | grep -q "jeff-2f92d"
+          curl -fsS http://localhost:8080/icon.svg | grep -q "<svg"
+          kill $WEB_PID
+          trap - EXIT
 
       - name: Prepare Android web bundle
         run: npm run web:prepare
@@ -52,9 +75,11 @@ jobs:
           test -f www/firebase.js
           test -f www/native-auth.js
           test -f www/service-worker.js
+          test -f www/icon.svg
           ! grep -q "accounts.google.com/gsi/client" www/index.html
           grep -q "native-auth.js" www/index.html
           grep -q "firebase.js" www/index.html
+          grep -q "native-auth.js" www/service-worker.js
 
   android-build:
     runs-on: ubuntu-latest
