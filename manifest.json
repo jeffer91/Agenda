@@ -1,9 +1,22 @@
 {
-  "name":"Agenda",
-  "short_name":"Agenda",
-  "start_url":"./",
-  "display":"standalone",
-  "background_color":"#f3f6f8",
-  "theme_color":"#0a66c2",
-  "description":"Agenda personal conectada con Google Calendar, Google Tasks y Neon."
+  "id": "./",
+  "name": "Agenda",
+  "short_name": "Agenda",
+  "description": "Agenda personal conectada con Google Calendar, Google Tasks y Neon.",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#f4f6f8",
+  "theme_color": "#1769aa",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
 }
