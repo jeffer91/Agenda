@@ -1,0 +1,55 @@
+{
+  "name": "agenda-jeffer91",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Agenda personal multiplataforma: Web, Electron y Android.",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "start": "electron .",
+    "electron": "electron .",
+    "web": "node scripts/web-server.mjs",
+    "web:prepare": "node scripts/prepare-web.mjs",
+    "android:setup": "node scripts/android-setup.mjs",
+    "android:sync": "npm run web:prepare && npx cap sync android",
+    "android:open": "npm run android:setup && npx cap open android",
+    "android:sha": "node scripts/android-sha.mjs",
+    "android:build": "node scripts/android-build.mjs",
+    "apk": "npm run android:build",
+    "desktop:dist": "electron-builder --win"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.1",
+    "@capacitor/core": "8.5.1",
+    "@capgo/capacitor-social-login": "8.5.7"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.1",
+    "electron": "44.3.0",
+    "electron-builder": "26.16.1"
+  },
+  "build": {
+    "appId": "com.jeffer91.agenda.desktop",
+    "productName": "Agenda",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      "index.html",
+      "app.js",
+      "styles.css",
+      "manifest.json",
+      "service-worker.js",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
