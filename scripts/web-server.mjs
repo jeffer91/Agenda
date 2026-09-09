@@ -11,6 +11,7 @@ const files = new Map([
   ['/', 'index.html'],
   ['/index.html', 'index.html'],
   ['/app.js', 'app.js'],
+  ['/firebase.js', 'firebase.js'],
   ['/styles.css', 'styles.css'],
   ['/manifest.json', 'manifest.json'],
   ['/service-worker.js', 'service-worker.js']
