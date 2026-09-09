@@ -1,5 +1,5 @@
-const CACHE='agenda-v4';
-const ASSETS=['./','./index.html','./styles.css','./app.js','./firebase.js','./manifest.json','./icon.svg'];
+const CACHE='agenda-v5';
+const ASSETS=['./','./index.html','./styles.css','./smart-agenda.css','./app.js','./smart-agenda.js','./firebase.js','./manifest.json','./icon.svg'];
 
 self.addEventListener('install',event=>{
   self.skipWaiting();
