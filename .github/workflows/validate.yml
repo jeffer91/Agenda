@@ -28,12 +28,19 @@ jobs:
       - name: Validate JavaScript syntax
         run: |
           node --check electron/main.cjs
+          node --check firebase.js
           node --check native-auth.js
           node --check scripts/web-server.mjs
           node --check scripts/prepare-web.mjs
           node --check scripts/android-setup.mjs
           node --check scripts/android-build.mjs
           node --check scripts/android-sha.mjs
+
+      - name: Validate Firebase configuration
+        run: |
+          grep -q "jeff-2f92d" firebase.js
+          grep -q "firebase.js" index.html
+          grep -q "firebase.js" electron/main.cjs
 
       - name: Prepare Android web bundle
         run: npm run web:prepare
@@ -42,10 +49,12 @@ jobs:
         run: |
           test -f www/index.html
           test -f www/app.js
+          test -f www/firebase.js
           test -f www/native-auth.js
           test -f www/service-worker.js
           ! grep -q "accounts.google.com/gsi/client" www/index.html
           grep -q "native-auth.js" www/index.html
+          grep -q "firebase.js" www/index.html
 
   android-build:
     runs-on: ubuntu-latest
