@@ -11,6 +11,8 @@ const S = {
   id: localStorage.agenda_id_token || '',
   access: '',
   client: localStorage.agenda_google_client_id || '',
+  synced: false,
+  syncing: false,
   events: [],
   tasks: [],
   areas: [],
@@ -82,11 +84,70 @@ function addDays(n) {
   return d;
 }
 
+function startOfToday() {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 function toast(message) {
   toastEl.textContent = message;
   toastEl.classList.add('show');
   clearTimeout(toast._timer);
-  toast._timer = setTimeout(() => toastEl.classList.remove('show'), 2600);
+  toast._timer = setTimeout(() => toastEl.classList.remove('show'), 2800);
+}
+
+function jwtExpired(token) {
+  try {
+    const part = token.split('.')[1];
+    if (!part) return true;
+    const normalized = part.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const payload = JSON.parse(atob(padded));
+    return !payload.exp || Date.now() >= (payload.exp * 1000 - 30000);
+  } catch {
+    return true;
+  }
+}
+
+function clearIdentity() {
+  S.id = '';
+  S.access = '';
+  S.synced = false;
+  S.events = [];
+  S.tasks = [];
+  delete localStorage.agenda_id_token;
+}
+
+function oauthHint() {
+  const hint = $('#oauthHint');
+  if (!hint) return;
+
+  const native = Boolean(window.Capacitor);
+  if (native) {
+    hint.innerHTML = 'Android usa el <strong>Web Client ID</strong> en este campo y valida la app nativa con su package name y SHA-1.';
+    return;
+  }
+
+  hint.innerHTML = `Origen actual que debe estar autorizado en Google Cloud: <strong>${esc(location.origin)}</strong>`;
+}
+
+function openSetup() {
+  $('#clientIdInput').value = S.client;
+  oauthHint();
+  setup.showModal();
+}
+
+function updateChrome() {
+  const googleBtn = $('#googleBtn');
+  const syncBtn = $('#syncBtn');
+
+  googleBtn.textContent = S.id ? 'Google ✓' : 'Conectar Google';
+  googleBtn.classList.toggle('connected', Boolean(S.id));
+
+  syncBtn.textContent = S.syncing ? 'Sincronizando…' : (S.synced ? 'Sincronizado ✓' : 'Sincronizar');
+  syncBtn.classList.toggle('connected', S.synced);
+  syncBtn.disabled = S.syncing;
 }
 
 async function readError(response) {
@@ -114,9 +175,9 @@ async function api(path, opt = {}) {
   });
 
   if (response.status === 401) {
-    S.id = '';
-    delete localStorage.agenda_id_token;
-    throw Error('Sesión vencida. Conecta Google otra vez.');
+    clearIdentity();
+    updateChrome();
+    throw Error('La sesión venció. Conecta Google otra vez.');
   }
 
   if (!response.ok) throw Error(await readError(response));
@@ -161,18 +222,17 @@ function initGIS() {
       try {
         await loadDB();
         toast('Agenda conectada');
-        render();
       } catch (error) {
         toast(error.message);
       }
+      render();
     }
   });
 }
 
 function signIn() {
   if (!S.client) {
-    $('#clientIdInput').value = '';
-    setup.showModal();
+    openSetup();
     return;
   }
 
@@ -186,12 +246,13 @@ function signIn() {
 
   const overlay = document.createElement('div');
   overlay.dataset.signinOverlay = '1';
-  overlay.style.cssText = 'position:fixed;inset:0;background:#0007;z-index:100;display:grid;place-items:center;padding:18px';
+  overlay.className = 'signin-overlay';
   overlay.innerHTML = `
-    <div style="background:white;padding:22px;border-radius:14px;max-width:360px;width:100%">
-      <h3 style="margin-top:0">Conectar Agenda</h3>
+    <div class="signin-card">
+      <h3>Conectar Agenda</h3>
+      <p class="muted">Usa tu cuenta de Google para acceder a tus datos y sincronizar Calendar y Tasks.</p>
       <div id="gis"></div>
-      <button class="btn secondary" id="closegis" style="width:100%;margin-top:10px">Cerrar</button>
+      <button class="btn secondary" id="closegis">Cerrar</button>
     </div>`;
   document.body.append(overlay);
 
@@ -212,7 +273,7 @@ function signIn() {
 
 function authGoogle() {
   if (!S.client) {
-    setup.showModal();
+    openSetup();
     return;
   }
   if (!S.id) {
@@ -224,27 +285,37 @@ function authGoogle() {
     toast('Google todavía está cargando. Intenta nuevamente.');
     return;
   }
+  if (S.syncing) return;
+
+  S.syncing = true;
+  updateChrome();
 
   const client = google.accounts.oauth2.initTokenClient({
     client_id: S.client,
     scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/tasks',
     callback: async response => {
-      if (response.error) {
-        toast(response.error_description || response.error);
-        return;
-      }
       try {
+        if (response.error) throw Error(response.error_description || response.error);
         S.access = response.access_token;
         await syncGoogle();
         toast('Calendar y Tasks sincronizados');
-        render();
       } catch (error) {
+        S.synced = false;
         toast(error.message);
+      } finally {
+        S.syncing = false;
+        render();
       }
     }
   });
 
-  client.requestAccessToken({ prompt: 'consent' });
+  try {
+    client.requestAccessToken({ prompt: 'consent' });
+  } catch (error) {
+    S.syncing = false;
+    updateChrome();
+    toast(error.message);
+  }
 }
 
 async function gf(url, opt = {}) {
@@ -261,6 +332,7 @@ async function gf(url, opt = {}) {
 
   if (response.status === 401) {
     S.access = '';
+    S.synced = false;
     throw Error('La autorización de Google venció. Pulsa Sincronizar otra vez.');
   }
 
@@ -272,9 +344,12 @@ function eventStart(event) {
   return parseAgendaDate(event.start?.dateTime || event.start?.date);
 }
 
+function taskDue(task) {
+  return task.due ? parseAgendaDate(String(task.due).slice(0, 10)) : null;
+}
+
 async function syncGoogle() {
-  const from = new Date();
-  from.setHours(0, 0, 0, 0);
+  const from = startOfToday();
   const to = addDays(6);
   to.setHours(23, 59, 59, 999);
 
@@ -302,6 +377,7 @@ async function syncGoogle() {
   }));
 
   S.tasks = taskGroups.flat();
+  S.synced = true;
 }
 
 function form(title, fields) {
@@ -525,7 +601,7 @@ async function act(type, el) {
 
 function callout() {
   return (!S.client || !S.id)
-    ? '<div class="setup-callout"><strong>Conecta tu cuenta de Google</strong>Esto habilita tu base personal en Neon. <button class="icon-btn" data-action="connect">Conectar</button></div>'
+    ? '<div class="setup-callout"><strong>Conecta tu cuenta de Google</strong><span>Accede a tu agenda personal y luego sincroniza Calendar y Tasks.</span><button class="icon-btn" data-action="connect">Conectar</button></div>'
     : '';
 }
 
@@ -534,10 +610,13 @@ function head(title, subtitle = '', buttons = '') {
 }
 
 function events(daysToShow = S.days) {
+  if (S.id && !S.synced) {
+    return '<div class="empty">Pulsa <strong>Sincronizar</strong> para cargar Google Calendar.</div>';
+  }
+
   const end = addDays(daysToShow - 1);
   end.setHours(23, 59, 59, 999);
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
+  const now = startOfToday();
 
   const visible = S.events.filter(event => {
     const date = eventStart(event);
@@ -555,21 +634,51 @@ function events(daysToShow = S.days) {
           </div>
         </div>`;
       }).join('')
-    : '<div class="empty">Sin eventos.</div>';
+    : '<div class="empty">Sin eventos en este periodo.</div>';
 }
 
-function tasks() {
-  return S.tasks.length
-    ? S.tasks.map((task, index) => `<div class="row">
-        <label class="check">
-          <input type="checkbox" data-task="${index}">
-          <div>
-            <div class="row-title">${esc(task.title)}</div>
-            <div class="row-sub">${task.due ? `Fecha: ${day(String(task.due).slice(0, 10))}` : 'Sin fecha'} · ${esc(task.list || 'Tasks')}</div>
-          </div>
-        </label>
-      </div>`).join('')
-    : '<div class="empty">Sin pendientes.</div>';
+function tasks(daysToShow = null) {
+  if (S.id && !S.synced) {
+    return '<div class="empty">Pulsa <strong>Sincronizar</strong> para cargar Google Tasks.</div>';
+  }
+
+  const today = startOfToday();
+  let visible = [...S.tasks];
+
+  if (daysToShow !== null) {
+    const end = addDays(daysToShow - 1);
+    end.setHours(23, 59, 59, 999);
+    visible = visible.filter(task => {
+      const due = taskDue(task);
+      return due && due <= end;
+    });
+  }
+
+  visible.sort((a, b) => {
+    const aDue = taskDue(a);
+    const bDue = taskDue(b);
+    if (aDue && bDue) return aDue - bDue;
+    if (aDue) return -1;
+    if (bDue) return 1;
+    return String(a.title || '').localeCompare(String(b.title || ''), 'es');
+  });
+
+  return visible.length
+    ? visible.map(task => {
+        const index = S.tasks.indexOf(task);
+        const due = taskDue(task);
+        const overdue = due && due < today;
+        return `<div class="row task-row ${overdue ? 'is-overdue' : ''}">
+          <label class="check">
+            <input type="checkbox" data-task="${index}" aria-label="Completar ${esc(task.title)}">
+            <div>
+              <div class="row-title">${esc(task.title)}</div>
+              <div class="row-sub ${overdue ? 'overdue' : ''}">${due ? `${overdue ? 'Vencido · ' : 'Fecha: '}${day(String(task.due).slice(0, 10))}` : 'Sin fecha'} · ${esc(task.list || 'Tasks')}</div>
+            </div>
+          </label>
+        </div>`;
+      }).join('')
+    : `<div class="empty">${daysToShow === null ? 'Sin pendientes.' : 'Sin pendientes con fecha en este periodo.'}</div>`;
 }
 
 function today() {
@@ -578,25 +687,25 @@ function today() {
       ${[1, 3, 5].map(n => `<button class="tab ${S.days === n ? 'active' : ''}" data-days="${n}">${n === 1 ? 'Hoy' : `${n} días`}</button>`).join('')}
     </div>
     <div class="grid two">
-      <section class="card">
+      <section class="card accent-card accent-events">
         <div class="section-title"><h2>Eventos</h2><button class="icon-btn" data-action="event">+ Evento</button></div>
         ${events()}
       </section>
-      <section class="card">
+      <section class="card accent-card accent-tasks">
         <div class="section-title"><h2>Pendientes</h2><button class="icon-btn" data-action="task">+ Pendiente</button></div>
-        ${tasks()}
+        ${tasks(S.days)}
       </section>
     </div>
-    <div class="grid two" style="margin-top:14px">
-      <section class="card">
+    <div class="grid two lower-grid">
+      <section class="card accent-card accent-projects">
         <h2>Proyectos activos</h2>
         ${S.projects.filter(project => project.status === 'activo').slice(0, 6).map(project => `<div class="row">
           <div class="row-main">
             <b>${esc(project.title)}</b>
-            <div class="progress" style="margin-top:7px"><span style="width:${progress(project.id)}%"></span></div>
+            <div class="progress"><span style="width:${progress(project.id)}%"></span></div>
           </div>
           <strong>${progress(project.id)}%</strong>
-        </div>`).join('') || '<div class="empty">Sin proyectos.</div>'}
+        </div>`).join('') || '<div class="empty">Sin proyectos activos.</div>'}
       </section>
       <section class="card today-note">
         <h2>Objetivos de vida</h2>
@@ -620,16 +729,20 @@ function projects() {
       const objectives = S.objectives.filter(item => item.project_id === project.id);
       const activities = S.activities.filter(item => item.project_id === project.id);
 
-      return `<article class="card project-card">
+      return `<article class="card project-card accent-card accent-projects">
         <div class="section-title">
           <div>
             <h2>${esc(project.title)}</h2>
-            ${area ? `<span class="pill">${esc(area.name)}</span>` : ''}
+            <div class="project-meta">
+              ${area ? `<span class="pill">${esc(area.name)}</span>` : ''}
+              <span class="pill status-${esc(project.status)}">${esc(project.status)}</span>
+            </div>
           </div>
           <strong>${progress(project.id)}%</strong>
         </div>
         <div class="progress"><span style="width:${progress(project.id)}%"></span></div>
         ${project.description ? `<div class="muted">${esc(project.description)}</div>` : ''}
+        ${project.target_date ? `<div class="row-sub">Fecha objetivo: ${day(project.target_date)}</div>` : ''}
 
         <div class="section-title"><b>Objetivos</b><button class="icon-btn" data-action="objective" data-project="${project.id}">+ Objetivo</button></div>
         ${objectives.map(objective => `<div class="row">
@@ -641,13 +754,17 @@ function projects() {
         </div>`).join('') || '<div class="empty">Sin objetivos.</div>'}
 
         <div class="section-title"><b>Actividades</b><button class="icon-btn" data-action="activity" data-project="${project.id}">+ Actividad</button></div>
-        ${activities.map(activity => `<label class="check row">
-          <input type="checkbox" ${activity.completed ? 'checked' : ''} data-activity="${activity.id}">
-          <div>
-            <b>${esc(activity.title)}</b>
-            <div class="row-sub">${activity.due_date ? day(activity.due_date) : 'Sin fecha'}</div>
-          </div>
-        </label>`).join('') || '<div class="empty">Sin actividades.</div>'}
+        ${activities.map(activity => {
+          const due = activity.due_date ? parseAgendaDate(activity.due_date) : null;
+          const overdue = due && !activity.completed && due < startOfToday();
+          return `<label class="check row ${overdue ? 'is-overdue' : ''}">
+            <input type="checkbox" ${activity.completed ? 'checked' : ''} data-activity="${activity.id}">
+            <div>
+              <b>${esc(activity.title)}</b>
+              <div class="row-sub ${overdue ? 'overdue' : ''}">${activity.due_date ? `${overdue ? 'Vencida · ' : ''}${day(activity.due_date)}` : 'Sin fecha'}</div>
+            </div>
+          </label>`;
+        }).join('') || '<div class="empty">Sin actividades.</div>'}
       </article>`;
     }).join('') || '<section class="card"><div class="empty">Crea tu primer proyecto.</div></section>'}
   </div>`;
@@ -662,23 +779,23 @@ function goals() {
 
   return `${callout()}${head('Objetivos de vida', 'Corto, mediano y largo plazo', '<button class="btn" data-action="goal">Nuevo objetivo</button>')}
     <div class="grid three">
-      ${Object.entries(labels).map(([horizon, label]) => `<section class="card">
+      ${Object.entries(labels).map(([horizon, label]) => `<section class="card accent-card accent-goals">
         <h2>${label}</h2>
         ${S.goals.filter(goal => goal.horizon === horizon).map(goal => `<div class="row">
           <div>
             <b>${esc(goal.title)}</b>
             <div class="row-sub">${goal.target_date ? day(goal.target_date) : 'Sin fecha'}</div>
           </div>
-          <span class="pill">${esc(goal.status)}</span>
+          <span class="pill status-${esc(goal.status)}">${esc(goal.status)}</span>
         </div>`).join('') || '<div class="empty">Sin objetivos.</div>'}
       </section>`).join('')}
     </div>`;
 }
 
 function journal() {
-  return `${callout()}${head('Mi diario', 'Escribe de todo', '<button class="btn" data-action="journal">Nueva entrada</button>')}
+  return `${callout()}${head('Mi diario', 'Notas personales por fecha', '<button class="btn" data-action="journal">Nueva entrada</button>')}
     <div class="grid">
-      ${S.journal.map(entry => `<article class="card">
+      ${S.journal.map(entry => `<article class="card accent-card accent-journal">
         <h2>${esc(entry.title || day(entry.entry_date))}</h2>
         <div class="row-sub">${long(entry.entry_date)}</div>
         <p class="journal-entry">${esc(entry.body)}</p>
@@ -687,9 +804,9 @@ function journal() {
 }
 
 function ideas() {
-  return `${callout()}${head('Ideas', 'Captura rápida', '<button class="btn" data-action="idea">Nueva idea</button>')}
+  return `${callout()}${head('Ideas', 'Captura rápida para desarrollar después', '<button class="btn" data-action="idea">Nueva idea</button>')}
     <div class="grid two">
-      ${S.ideas.map(idea => `<article class="card">
+      ${S.ideas.map(idea => `<article class="card accent-card accent-ideas">
         <div class="section-title"><h2>${esc(idea.title)}</h2><span class="badge">${esc(idea.status)}</span></div>
         <p>${esc(idea.body || '')}</p>
       </article>`).join('') || '<section class="card"><div class="empty">Sin ideas.</div></section>'}
@@ -699,26 +816,26 @@ function ideas() {
 function stats() {
   const x = S.stats;
   const metrics = [
-    ['Proyectos activos', x.active_projects],
-    ['Proyectos completados', x.completed_projects],
-    ['Actividades pendientes', x.pending_activities],
-    ['Actividades completadas', x.completed_activities],
-    ['Objetivos de vida', x.active_life_goals],
-    ['Diario', x.journal_entries],
-    ['Ideas', x.open_ideas]
+    ['Proyectos activos', x.active_projects, 'metric-blue'],
+    ['Proyectos completados', x.completed_projects, 'metric-green'],
+    ['Actividades pendientes', x.pending_activities, 'metric-amber'],
+    ['Actividades completadas', x.completed_activities, 'metric-teal'],
+    ['Objetivos de vida', x.active_life_goals, 'metric-purple'],
+    ['Diario', x.journal_entries, 'metric-indigo'],
+    ['Ideas', x.open_ideas, 'metric-orange']
   ];
 
   return `${callout()}${head('Estadísticas', 'Tu avance acumulado')}
     <div class="grid three">
-      ${metrics.map(([label, value]) => `<div class="card"><div class="metric">${value ?? 0}</div><div class="metric-label">${label}</div></div>`).join('')}
+      ${metrics.map(([label, value, color]) => `<div class="card metric-card ${color}"><div class="metric">${value ?? 0}</div><div class="metric-label">${label}</div></div>`).join('')}
     </div>`;
 }
 
 function render() {
   const views = {
     today,
-    calendar: () => `${callout()}${head('Calendario', 'Próximos 7 días · Google Calendar', '<button class="btn" data-action="event">Nuevo evento</button>')}<section class="card">${events(7)}</section>`,
-    tasks: () => `${callout()}${head('Pendientes', 'Google Tasks', '<button class="btn" data-action="task">Nuevo pendiente</button>')}<section class="card">${tasks()}</section>`,
+    calendar: () => `${callout()}${head('Calendario', 'Próximos 7 días · Google Calendar', '<button class="btn" data-action="event">Nuevo evento</button>')}<section class="card accent-card accent-events">${events(7)}</section>`,
+    tasks: () => `${callout()}${head('Pendientes', 'Google Tasks', '<button class="btn" data-action="task">Nuevo pendiente</button>')}<section class="card accent-card accent-tasks">${tasks()}</section>`,
     projects,
     goals,
     journal,
@@ -726,7 +843,9 @@ function render() {
     stats
   };
 
-  app.innerHTML = views[S.view]();
+  const view = views[S.view] || today;
+  app.innerHTML = view();
+  updateChrome();
 
   $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === S.view));
   $$('[data-days]').forEach(button => {
@@ -742,6 +861,7 @@ function render() {
   $$('[data-task]').forEach(checkbox => {
     checkbox.onchange = async () => {
       const task = S.tasks[+checkbox.dataset.task];
+      if (!task) return;
       checkbox.disabled = true;
       try {
         await gf(`https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(task.listId)}/tasks/${encodeURIComponent(task.id)}`, {
@@ -790,28 +910,37 @@ $$('.nav-item').forEach(button => {
   };
 });
 
-$('#googleBtn').onclick = signIn;
+$('#googleBtn').onclick = () => {
+  if (S.id) openSetup();
+  else signIn();
+};
 $('#syncBtn').onclick = authGoogle;
 
 $('#setupForm').onsubmit = event => {
   event.preventDefault();
-  S.client = $('#clientIdInput').value.trim();
-  if (!S.client.endsWith('.apps.googleusercontent.com')) {
+  const nextClient = $('#clientIdInput').value.trim();
+  if (!nextClient.endsWith('.apps.googleusercontent.com')) {
     toast('El Client ID de Google no parece válido');
     return;
   }
+
+  const changed = S.client && S.client !== nextClient;
+  S.client = nextClient;
   localStorage.agenda_google_client_id = S.client;
+  if (changed) clearIdentity();
   setup.close();
   initGIS();
   signIn();
 };
 
 (async () => {
+  if (S.id && jwtExpired(S.id)) clearIdentity();
+
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./service-worker.js').catch(() => {});
   }
 
-  for (let i = 0; i < 40 && !window.google?.accounts; i++) {
+  for (let i = 0; i < 50 && !window.google?.accounts; i++) {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
 
