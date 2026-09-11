@@ -406,7 +406,7 @@ function form(title, fields) {
 entity.addEventListener('close', () => {
   if (!resolveForm) return;
   const result = entity.returnValue === 'default'
-    ? Object.fromEntries(new FormData($('#entityForm').entries()))
+    ? Object.fromEntries(new FormData($('#entityForm')).entries())
     : null;
   resolveForm(result);
   resolveForm = null;
