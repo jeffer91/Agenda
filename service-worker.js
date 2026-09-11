@@ -1,4 +1,4 @@
-const CACHE='agenda-v8';
+const CACHE='agenda-v9';
 const ASSETS=['./','./index.html','./styles.css','./smart-agenda.css','./app.js','./task-excel.js','./smart-agenda.js','./auto-google.js','./ai-config.js','./ai-agenda.js','./firebase.js','./manifest.json','./icon.svg'];
 
 self.addEventListener('install',event=>{
