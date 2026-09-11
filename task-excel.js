@@ -65,16 +65,18 @@ function excelDate(value, XLSX) {
   const text = String(value).trim();
   if (!text) return '';
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
-    const date = new Date(`${text}T12:00:00`);
-    return Number.isNaN(date.getTime()) ? null : text;
+    const [y, m, d] = text.split('-').map(Number);
+    const date = new Date(y, m - 1, d, 12, 0, 0);
+    if (date.getFullYear() === y && date.getMonth() + 1 === m && date.getDate() === d) return text;
+    return null;
   }
 
   const latam = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
   if (latam) {
     const [, d, m, y] = latam;
     const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const date = new Date(`${iso}T12:00:00`);
-    if (!Number.isNaN(date.getTime()) && date.getFullYear() === Number(y) && date.getMonth() + 1 === Number(m) && date.getDate() === Number(d)) return iso;
+    const date = new Date(Number(y), Number(m) - 1, Number(d), 12, 0, 0);
+    if (date.getFullYear() === Number(y) && date.getMonth() + 1 === Number(m) && date.getDate() === Number(d)) return iso;
     return null;
   }
 
@@ -92,8 +94,9 @@ function ensureDialog() {
   dialog = document.createElement('dialog');
   dialog.id = 'taskExcelDialog';
   dialog.className = 'modal';
+  dialog.style.width = 'min(920px, calc(100% - 24px))';
   dialog.innerHTML = `
-    <form method="dialog" id="taskExcelForm" style="width:min(920px,calc(100vw - 24px));max-width:100%">
+    <form method="dialog" id="taskExcelForm">
       <h2>Importar pendientes desde Excel</h2>
       <p class="muted" id="taskExcelFileName"></p>
       <div id="taskExcelSummary" class="task-excel-summary"></div>
@@ -131,22 +134,25 @@ function ensureDialog() {
 function renderPreview() {
   const dialog = ensureDialog();
   const skipDuplicates = dialog.querySelector('#taskExcelSkipDuplicates').checked;
-  const valid = importRows.filter(row => !row.error);
+  const valid = importRows.filter(row => !row.error && !row.imported);
   const duplicates = valid.filter(row => row.duplicate);
   const ready = valid.filter(row => !(skipDuplicates && row.duplicate));
   const errors = importRows.filter(row => row.error);
+  const imported = importRows.filter(row => row.imported);
 
   dialog.querySelector('#taskExcelSummary').innerHTML = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px">
       <span class="pill">${importRows.length} filas</span>
       <span class="pill status-activo">${ready.length} para importar</span>
+      ${imported.length ? `<span class="pill" style="background:#eaf5f4;color:#237a70">${imported.length} importado${imported.length === 1 ? '' : 's'}</span>` : ''}
       ${duplicates.length ? `<span class="pill status-pausado">${duplicates.length} duplicado${duplicates.length === 1 ? '' : 's'}</span>` : ''}
       ${errors.length ? `<span class="pill" style="background:#fff0ef;color:#b42318">${errors.length} con error</span>` : ''}
     </div>`;
 
   dialog.querySelector('#taskExcelPreview').innerHTML = importRows.map(row => {
     let state = '<span style="color:#2f7d4a;font-weight:700">Válido</span>';
-    if (row.error) state = `<span style="color:#b42318;font-weight:700">${esc(row.error)}</span>`;
+    if (row.imported) state = '<span style="color:#237a70;font-weight:700">Importado</span>';
+    else if (row.error) state = `<span style="color:#b42318;font-weight:700">${esc(row.error)}</span>`;
     else if (row.duplicate) state = `<span style="color:#a96708;font-weight:700">${skipDuplicates ? 'Duplicado · se omitirá' : 'Duplicado'}</span>`;
     return `<tr>
       <td style="padding:9px;border-bottom:1px solid #edf0f3">${row.row}</td>
@@ -251,6 +257,7 @@ export async function openTaskExcelImport(context) {
       listId: list?.id || '',
       listName,
       error,
+      imported: false,
       duplicate: !error && existing.has(taskKey(title, due, listName))
     };
   });
@@ -267,7 +274,7 @@ async function importPendingTasks() {
   const dialog = ensureDialog();
   const button = dialog.querySelector('#taskExcelImport');
   const skipDuplicates = dialog.querySelector('#taskExcelSkipDuplicates').checked;
-  const rows = importRows.filter(row => !row.error && !(skipDuplicates && row.duplicate));
+  const rows = importRows.filter(row => !row.error && !row.imported && !(skipDuplicates && row.duplicate));
   if (!rows.length || !context) return;
 
   button.disabled = true;
@@ -288,6 +295,7 @@ async function importPendingTasks() {
           method: 'POST',
           body: JSON.stringify(body)
         });
+        row.imported = true;
         completed += 1;
       } catch (error) {
         failed += 1;
