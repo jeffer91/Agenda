@@ -1,0 +1,317 @@
+const XLSX_SRC = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+let importRows = [];
+let importContext = null;
+
+function normalize(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase();
+}
+
+function esc(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  }[char]));
+}
+
+async function ensureXLSX() {
+  if (window.XLSX) return window.XLSX;
+  await new Promise((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${XLSX_SRC}"]`);
+    if (existing) {
+      existing.addEventListener('load', resolve, { once: true });
+      existing.addEventListener('error', () => reject(new Error('No se pudo cargar el lector de Excel.')), { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = XLSX_SRC;
+    script.async = true;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error('No se pudo cargar el lector de Excel. Revisa tu conexión.'));
+    document.head.append(script);
+  });
+  if (!window.XLSX) throw new Error('El lector de Excel no está disponible.');
+  return window.XLSX;
+}
+
+function pick(row, aliases) {
+  const entries = Object.entries(row);
+  for (const alias of aliases) {
+    const key = entries.find(([name]) => normalize(name) === normalize(alias))?.[0];
+    if (key) return row[key];
+  }
+  return '';
+}
+
+function excelDate(value, XLSX) {
+  if (value === '' || value === null || value === undefined) return '';
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
+
+  if (typeof value === 'number') {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (!parsed) return null;
+    return `${parsed.y}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+  }
+
+  const text = String(value).trim();
+  if (!text) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const date = new Date(`${text}T12:00:00`);
+    return Number.isNaN(date.getTime()) ? null : text;
+  }
+
+  const latam = text.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})$/);
+  if (latam) {
+    const [, d, m, y] = latam;
+    const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const date = new Date(`${iso}T12:00:00`);
+    if (!Number.isNaN(date.getTime()) && date.getFullYear() === Number(y) && date.getMonth() + 1 === Number(m) && date.getDate() === Number(d)) return iso;
+    return null;
+  }
+
+  return null;
+}
+
+function taskKey(title, due, list) {
+  return `${normalize(title)}|${String(due || '').slice(0, 10)}|${normalize(list)}`;
+}
+
+function ensureDialog() {
+  let dialog = document.querySelector('#taskExcelDialog');
+  if (dialog) return dialog;
+
+  dialog = document.createElement('dialog');
+  dialog.id = 'taskExcelDialog';
+  dialog.className = 'modal';
+  dialog.innerHTML = `
+    <form method="dialog" id="taskExcelForm" style="width:min(920px,calc(100vw - 24px));max-width:100%">
+      <h2>Importar pendientes desde Excel</h2>
+      <p class="muted" id="taskExcelFileName"></p>
+      <div id="taskExcelSummary" class="task-excel-summary"></div>
+      <label style="display:flex;grid-template-columns:auto 1fr;align-items:center;gap:9px;font-weight:650">
+        <input id="taskExcelSkipDuplicates" type="checkbox" checked style="width:18px;height:18px;margin:0">
+        Evitar pendientes duplicados
+      </label>
+      <div style="overflow:auto;max-height:52vh;border:1px solid #dfe4ea;border-radius:10px;margin-top:12px">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead style="position:sticky;top:0;background:#f8fafc;z-index:1">
+            <tr>
+              <th style="text-align:left;padding:9px;border-bottom:1px solid #dfe4ea">Fila</th>
+              <th style="text-align:left;padding:9px;border-bottom:1px solid #dfe4ea">Pendiente</th>
+              <th style="text-align:left;padding:9px;border-bottom:1px solid #dfe4ea">Fecha</th>
+              <th style="text-align:left;padding:9px;border-bottom:1px solid #dfe4ea">Lista</th>
+              <th style="text-align:left;padding:9px;border-bottom:1px solid #dfe4ea">Estado</th>
+            </tr>
+          </thead>
+          <tbody id="taskExcelPreview"></tbody>
+        </table>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" class="btn secondary" id="taskExcelCancel">Cancelar</button>
+        <button type="button" class="btn" id="taskExcelImport">Importar pendientes</button>
+      </div>
+    </form>`;
+  document.body.append(dialog);
+
+  dialog.querySelector('#taskExcelCancel').onclick = () => dialog.close();
+  dialog.querySelector('#taskExcelSkipDuplicates').onchange = renderPreview;
+  dialog.querySelector('#taskExcelImport').onclick = importPendingTasks;
+  return dialog;
+}
+
+function renderPreview() {
+  const dialog = ensureDialog();
+  const skipDuplicates = dialog.querySelector('#taskExcelSkipDuplicates').checked;
+  const valid = importRows.filter(row => !row.error);
+  const duplicates = valid.filter(row => row.duplicate);
+  const ready = valid.filter(row => !(skipDuplicates && row.duplicate));
+  const errors = importRows.filter(row => row.error);
+
+  dialog.querySelector('#taskExcelSummary').innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px">
+      <span class="pill">${importRows.length} filas</span>
+      <span class="pill status-activo">${ready.length} para importar</span>
+      ${duplicates.length ? `<span class="pill status-pausado">${duplicates.length} duplicado${duplicates.length === 1 ? '' : 's'}</span>` : ''}
+      ${errors.length ? `<span class="pill" style="background:#fff0ef;color:#b42318">${errors.length} con error</span>` : ''}
+    </div>`;
+
+  dialog.querySelector('#taskExcelPreview').innerHTML = importRows.map(row => {
+    let state = '<span style="color:#2f7d4a;font-weight:700">Válido</span>';
+    if (row.error) state = `<span style="color:#b42318;font-weight:700">${esc(row.error)}</span>`;
+    else if (row.duplicate) state = `<span style="color:#a96708;font-weight:700">${skipDuplicates ? 'Duplicado · se omitirá' : 'Duplicado'}</span>`;
+    return `<tr>
+      <td style="padding:9px;border-bottom:1px solid #edf0f3">${row.row}</td>
+      <td style="padding:9px;border-bottom:1px solid #edf0f3;font-weight:650">${esc(row.title || '—')}</td>
+      <td style="padding:9px;border-bottom:1px solid #edf0f3">${esc(row.due || 'Sin fecha')}</td>
+      <td style="padding:9px;border-bottom:1px solid #edf0f3">${esc(row.listName || 'Predeterminada')}</td>
+      <td style="padding:9px;border-bottom:1px solid #edf0f3">${state}</td>
+    </tr>`;
+  }).join('');
+
+  const button = dialog.querySelector('#taskExcelImport');
+  button.disabled = ready.length === 0;
+  button.textContent = ready.length ? `Importar ${ready.length} pendiente${ready.length === 1 ? '' : 's'}` : 'Nada para importar';
+}
+
+async function chooseExcel() {
+  return new Promise(resolve => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel';
+    input.style.display = 'none';
+    document.body.append(input);
+    input.onchange = () => {
+      const file = input.files?.[0] || null;
+      input.remove();
+      resolve(file);
+    };
+    input.oncancel = () => {
+      input.remove();
+      resolve(null);
+    };
+    input.click();
+  });
+}
+
+export async function downloadTaskMatrix() {
+  const XLSX = await ensureXLSX();
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['Pendiente', 'Fecha límite', 'Lista de Google Tasks', 'Notas']
+  ]);
+  sheet['!cols'] = [{ wch: 42 }, { wch: 16 }, { wch: 28 }, { wch: 52 }];
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Pendientes');
+
+  const instructions = XLSX.utils.aoa_to_sheet([
+    ['Matriz de pendientes · Agenda'],
+    ['Campo', 'Uso'],
+    ['Pendiente', 'Obligatorio. Nombre del pendiente.'],
+    ['Fecha límite', 'Opcional. Formato recomendado: AAAA-MM-DD.'],
+    ['Lista de Google Tasks', 'Opcional. Si queda vacía se usa la lista predeterminada.'],
+    ['Notas', 'Opcional. Se guarda como nota de Google Tasks.'],
+    [],
+    ['Importante', 'No cambies los nombres de las columnas de la hoja Pendientes.']
+  ]);
+  instructions['!cols'] = [{ wch: 28 }, { wch: 78 }];
+  XLSX.utils.book_append_sheet(workbook, instructions, 'Instrucciones');
+  XLSX.writeFile(workbook, 'Matriz_Pendientes_Agenda.xlsx');
+}
+
+export async function openTaskExcelImport(context) {
+  importContext = context;
+  if (!context?.gf || !context?.syncGoogle || !context?.render || !context?.toast) throw new Error('La integración de pendientes no está disponible.');
+
+  const file = await chooseExcel();
+  if (!file) return;
+
+  const XLSX = await ensureXLSX();
+  const data = await file.arrayBuffer();
+  const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  if (!sheet) throw new Error('El Excel no contiene una hoja válida.');
+
+  const sourceRows = XLSX.utils.sheet_to_json(sheet, { defval: '', raw: true });
+  if (!sourceRows.length) throw new Error('La matriz está vacía.');
+
+  const listsResponse = await context.gf('https://tasks.googleapis.com/tasks/v1/users/@me/lists?maxResults=100');
+  const lists = listsResponse.items || [];
+  if (!lists.length) throw new Error('No encontré listas de Google Tasks.');
+
+  const listByName = new Map(lists.map(list => [normalize(list.title), list]));
+  const defaultList = lists[0];
+  const existing = new Set((context.tasks || []).map(task => taskKey(task.title, task.due, task.list)));
+
+  importRows = sourceRows.map((source, index) => {
+    const title = String(pick(source, ['Pendiente', 'Tarea', 'Título', 'Titulo']) || '').trim();
+    const dueRaw = pick(source, ['Fecha límite', 'Fecha limite', 'Fecha', 'Vencimiento']);
+    const due = excelDate(dueRaw, XLSX);
+    const requestedList = String(pick(source, ['Lista de Google Tasks', 'Lista', 'Google Tasks']) || '').trim();
+    const notes = String(pick(source, ['Notas', 'Nota', 'Descripción', 'Descripcion']) || '').trim();
+    const list = requestedList ? listByName.get(normalize(requestedList)) : defaultList;
+    let error = '';
+    if (!title) error = 'Falta el pendiente';
+    else if (due === null) error = 'Fecha inválida';
+    else if (!list) error = `No existe la lista “${requestedList}”`;
+
+    const listName = list?.title || requestedList;
+    return {
+      row: index + 2,
+      title,
+      due: due || '',
+      notes,
+      listId: list?.id || '',
+      listName,
+      error,
+      duplicate: !error && existing.has(taskKey(title, due, listName))
+    };
+  });
+
+  const dialog = ensureDialog();
+  dialog.querySelector('#taskExcelFileName').textContent = `Archivo: ${file.name}`;
+  dialog.querySelector('#taskExcelSkipDuplicates').checked = true;
+  renderPreview();
+  dialog.showModal();
+}
+
+async function importPendingTasks() {
+  const context = importContext;
+  const dialog = ensureDialog();
+  const button = dialog.querySelector('#taskExcelImport');
+  const skipDuplicates = dialog.querySelector('#taskExcelSkipDuplicates').checked;
+  const rows = importRows.filter(row => !row.error && !(skipDuplicates && row.duplicate));
+  if (!rows.length || !context) return;
+
+  button.disabled = true;
+  const originalLabel = button.textContent;
+  let completed = 0;
+  let failed = 0;
+  let cursor = 0;
+
+  const worker = async () => {
+    while (cursor < rows.length) {
+      const row = rows[cursor++];
+      button.textContent = `Importando ${completed + failed + 1} de ${rows.length}…`;
+      const body = { title: row.title };
+      if (row.due) body.due = `${row.due}T00:00:00.000Z`;
+      if (row.notes) body.notes = row.notes;
+      try {
+        await context.gf(`https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(row.listId)}/tasks`, {
+          method: 'POST',
+          body: JSON.stringify(body)
+        });
+        completed += 1;
+      } catch (error) {
+        failed += 1;
+        row.error = error.message || 'No se pudo importar';
+      }
+    }
+  };
+
+  try {
+    await Promise.all(Array.from({ length: Math.min(3, rows.length) }, worker));
+    await context.syncGoogle();
+    context.render();
+    if (failed) {
+      context.toast(`${completed} importados · ${failed} con error`);
+      renderPreview();
+      button.disabled = false;
+      button.textContent = originalLabel;
+      return;
+    }
+    dialog.close();
+    context.toast(`${completed} pendiente${completed === 1 ? '' : 's'} importado${completed === 1 ? '' : 's'}`);
+  } catch (error) {
+    context.toast(error.message || 'No se pudo completar la importación');
+    button.disabled = false;
+    button.textContent = originalLabel;
+  }
+}
