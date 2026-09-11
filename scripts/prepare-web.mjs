@@ -8,8 +8,14 @@ const out = path.join(root, 'www');
 
 const assets = [
   'app.js',
+  'task-excel.js',
   'firebase.js',
   'styles.css',
+  'smart-agenda.css',
+  'smart-agenda.js',
+  'auto-google.js',
+  'ai-config.js',
+  'ai-agenda.js',
   'manifest.json',
   'icon.svg',
   'native-auth.js'
@@ -29,7 +35,7 @@ for (const asset of assets) {
 
 let serviceWorker = await fs.readFile(path.join(root, 'service-worker.js'), 'utf8');
 serviceWorker = serviceWorker
-  .replace("const CACHE='agenda-v4';", "const CACHE='agenda-android-v3';")
+  .replace("const CACHE='agenda-v8';", "const CACHE='agenda-android-v4';")
   .replace("'./icon.svg']", "'./icon.svg','./native-auth.js']");
 await fs.writeFile(path.join(out, 'service-worker.js'), serviceWorker, 'utf8');
 
