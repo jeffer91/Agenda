@@ -111,7 +111,7 @@ function ensureDialog() {
               <th style="text-align:left;padding:9px;border-bottom:1px solid #dfe4ea">Fila</th>
               <th style="text-align:left;padding:9px;border-bottom:1px solid #dfe4ea">Pendiente</th>
               <th style="text-align:left;padding:9px;border-bottom:1px solid #dfe4ea">Fecha</th>
-              <th style="text-align:left;padding:9px;border-bottom:1px solid #dfe4ea">Lista</th>
+              <th style="text-align:left;padding:9px;border-bottom:1px solid #dfe4ea">Lista / Área</th>
               <th style="text-align:left;padding:9px;border-bottom:1px solid #dfe4ea">Estado</th>
             </tr>
           </thead>
@@ -139,11 +139,18 @@ function renderPreview() {
   const ready = valid.filter(row => !(skipDuplicates && row.duplicate));
   const errors = importRows.filter(row => row.error);
   const imported = importRows.filter(row => row.imported);
+  const newLists = [...new Set(
+    ready
+      .filter(row => row.needsListCreation)
+      .map(row => normalize(row.listName))
+      .filter(Boolean)
+  )];
 
   dialog.querySelector('#taskExcelSummary').innerHTML = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px">
       <span class="pill">${importRows.length} filas</span>
       <span class="pill status-activo">${ready.length} para importar</span>
+      ${newLists.length ? `<span class="pill" style="background:#edf5fb;color:#1769aa">${newLists.length} lista${newLists.length === 1 ? '' : 's'} nueva${newLists.length === 1 ? '' : 's'}</span>` : ''}
       ${imported.length ? `<span class="pill" style="background:#eaf5f4;color:#237a70">${imported.length} importado${imported.length === 1 ? '' : 's'}</span>` : ''}
       ${duplicates.length ? `<span class="pill status-pausado">${duplicates.length} duplicado${duplicates.length === 1 ? '' : 's'}</span>` : ''}
       ${errors.length ? `<span class="pill" style="background:#fff0ef;color:#b42318">${errors.length} con error</span>` : ''}
@@ -154,6 +161,8 @@ function renderPreview() {
     if (row.imported) state = '<span style="color:#237a70;font-weight:700">Importado</span>';
     else if (row.error) state = `<span style="color:#b42318;font-weight:700">${esc(row.error)}</span>`;
     else if (row.duplicate) state = `<span style="color:#a96708;font-weight:700">${skipDuplicates ? 'Duplicado · se omitirá' : 'Duplicado'}</span>`;
+    else if (row.needsListCreation) state = `<span style="color:#1769aa;font-weight:700">Nueva lista · se creará “${esc(row.listName)}”</span>`;
+
     return `<tr>
       <td style="padding:9px;border-bottom:1px solid #edf0f3">${row.row}</td>
       <td style="padding:9px;border-bottom:1px solid #edf0f3;font-weight:650">${esc(row.title || '—')}</td>
@@ -192,9 +201,9 @@ export async function downloadTaskMatrix() {
   const XLSX = await ensureXLSX();
   const workbook = XLSX.utils.book_new();
   const sheet = XLSX.utils.aoa_to_sheet([
-    ['Pendiente', 'Fecha límite', 'Lista de Google Tasks', 'Notas']
+    ['Pendiente', 'Fecha límite', 'Lista / Área de Google Tasks', 'Notas']
   ]);
-  sheet['!cols'] = [{ wch: 42 }, { wch: 16 }, { wch: 28 }, { wch: 52 }];
+  sheet['!cols'] = [{ wch: 42 }, { wch: 16 }, { wch: 31 }, { wch: 52 }];
   XLSX.utils.book_append_sheet(workbook, sheet, 'Pendientes');
 
   const instructions = XLSX.utils.aoa_to_sheet([
@@ -202,12 +211,16 @@ export async function downloadTaskMatrix() {
     ['Campo', 'Uso'],
     ['Pendiente', 'Obligatorio. Nombre del pendiente.'],
     ['Fecha límite', 'Opcional. Formato recomendado: AAAA-MM-DD.'],
-    ['Lista de Google Tasks', 'Opcional. Si queda vacía se usa la lista predeterminada.'],
+    ['Lista / Área de Google Tasks', 'Opcional. Ejemplos: UGPA, UTET, Personal o Doctorado.'],
+    ['Lista existente', 'Si la lista ya existe en Google Tasks, Agenda la utiliza.'],
+    ['Lista nueva', 'Si la lista no existe, Agenda la crea automáticamente antes de importar los pendientes.'],
+    ['Lista vacía', 'Si esta columna queda vacía, se utiliza la lista predeterminada de Google Tasks.'],
     ['Notas', 'Opcional. Se guarda como nota de Google Tasks.'],
+    ['Duplicados', 'Agenda puede omitir automáticamente pendientes duplicados durante la importación.'],
     [],
     ['Importante', 'No cambies los nombres de las columnas de la hoja Pendientes.']
   ]);
-  instructions['!cols'] = [{ wch: 28 }, { wch: 78 }];
+  instructions['!cols'] = [{ wch: 32 }, { wch: 92 }];
   XLSX.utils.book_append_sheet(workbook, instructions, 'Instrucciones');
   XLSX.writeFile(workbook, 'Matriz_Pendientes_Agenda.xlsx');
 }
@@ -240,25 +253,36 @@ export async function openTaskExcelImport(context) {
     const title = String(pick(source, ['Pendiente', 'Tarea', 'Título', 'Titulo']) || '').trim();
     const dueRaw = pick(source, ['Fecha límite', 'Fecha limite', 'Fecha', 'Vencimiento']);
     const due = excelDate(dueRaw, XLSX);
-    const requestedList = String(pick(source, ['Lista de Google Tasks', 'Lista', 'Google Tasks']) || '').trim();
+    const requestedList = String(pick(source, [
+      'Lista / Área de Google Tasks',
+      'Lista / Area de Google Tasks',
+      'Lista de Google Tasks',
+      'Lista / Área',
+      'Lista / Area',
+      'Lista',
+      'Google Tasks'
+    ]) || '').trim();
     const notes = String(pick(source, ['Notas', 'Nota', 'Descripción', 'Descripcion']) || '').trim();
-    const list = requestedList ? listByName.get(normalize(requestedList)) : defaultList;
+    const existingList = requestedList ? listByName.get(normalize(requestedList)) : defaultList;
+    const needsListCreation = Boolean(requestedList && !existingList);
+    const listName = existingList?.title || requestedList || defaultList.title;
+
     let error = '';
     if (!title) error = 'Falta el pendiente';
     else if (due === null) error = 'Fecha inválida';
-    else if (!list) error = `No existe la lista “${requestedList}”`;
 
-    const listName = list?.title || requestedList;
     return {
       row: index + 2,
       title,
       due: due || '',
       notes,
-      listId: list?.id || '',
+      listId: existingList?.id || '',
       listName,
+      requestedList,
+      needsListCreation,
       error,
       imported: false,
-      duplicate: !error && existing.has(taskKey(title, due, listName))
+      duplicate: !error && !needsListCreation && existing.has(taskKey(title, due, listName))
     };
   });
 
@@ -269,57 +293,117 @@ export async function openTaskExcelImport(context) {
   dialog.showModal();
 }
 
+async function prepareMissingLists(rows, context, button) {
+  const listsResponse = await context.gf('https://tasks.googleapis.com/tasks/v1/users/@me/lists?maxResults=100');
+  const currentLists = listsResponse.items || [];
+  const listByName = new Map(currentLists.map(list => [normalize(list.title), list]));
+
+  const requiredNames = [...new Set(
+    rows
+      .filter(row => row.needsListCreation && row.listName)
+      .map(row => row.listName.trim())
+      .filter(Boolean)
+  )];
+
+  for (let i = 0; i < requiredNames.length; i += 1) {
+    const name = requiredNames[i];
+    const key = normalize(name);
+    button.textContent = `Preparando lista ${i + 1} de ${requiredNames.length}…`;
+
+    let list = listByName.get(key);
+    if (!list) {
+      try {
+        list = await context.gf('https://tasks.googleapis.com/tasks/v1/users/@me/lists', {
+          method: 'POST',
+          body: JSON.stringify({ title: name })
+        });
+        listByName.set(key, list);
+      } catch (error) {
+        rows
+          .filter(row => normalize(row.listName) === key)
+          .forEach(row => {
+            row.error = `No se pudo crear la lista “${name}”: ${error.message || 'error de Google Tasks'}`;
+          });
+        continue;
+      }
+    }
+
+    rows
+      .filter(row => normalize(row.listName) === key && !row.error)
+      .forEach(row => {
+        row.listId = list.id;
+        row.listName = list.title || name;
+        row.needsListCreation = false;
+      });
+  }
+}
+
 async function importPendingTasks() {
   const context = importContext;
   const dialog = ensureDialog();
   const button = dialog.querySelector('#taskExcelImport');
   const skipDuplicates = dialog.querySelector('#taskExcelSkipDuplicates').checked;
-  const rows = importRows.filter(row => !row.error && !row.imported && !(skipDuplicates && row.duplicate));
-  if (!rows.length || !context) return;
+  const selectedRows = importRows.filter(row => !row.error && !row.imported && !(skipDuplicates && row.duplicate));
+  if (!selectedRows.length || !context) return;
 
   button.disabled = true;
-  const originalLabel = button.textContent;
   let completed = 0;
   let failed = 0;
-  let cursor = 0;
-
-  const worker = async () => {
-    while (cursor < rows.length) {
-      const row = rows[cursor++];
-      button.textContent = `Importando ${completed + failed + 1} de ${rows.length}…`;
-      const body = { title: row.title };
-      if (row.due) body.due = `${row.due}T00:00:00.000Z`;
-      if (row.notes) body.notes = row.notes;
-      try {
-        await context.gf(`https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(row.listId)}/tasks`, {
-          method: 'POST',
-          body: JSON.stringify(body)
-        });
-        row.imported = true;
-        completed += 1;
-      } catch (error) {
-        failed += 1;
-        row.error = error.message || 'No se pudo importar';
-      }
-    }
-  };
 
   try {
+    await prepareMissingLists(selectedRows, context, button);
+
+    const rows = selectedRows.filter(row => !row.error && row.listId);
+    const listFailures = selectedRows.filter(row => row.error).length;
+    failed += listFailures;
+
+    if (!rows.length) {
+      renderPreview();
+      context.toast('No se pudo preparar ninguna lista para importar');
+      return;
+    }
+
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < rows.length) {
+        const row = rows[cursor++];
+        button.textContent = `Importando ${completed + failed + 1} de ${selectedRows.length}…`;
+        const body = { title: row.title };
+        if (row.due) body.due = `${row.due}T00:00:00.000Z`;
+        if (row.notes) body.notes = row.notes;
+
+        try {
+          await context.gf(`https://tasks.googleapis.com/tasks/v1/lists/${encodeURIComponent(row.listId)}/tasks`, {
+            method: 'POST',
+            body: JSON.stringify(body)
+          });
+          row.imported = true;
+          completed += 1;
+        } catch (error) {
+          failed += 1;
+          row.error = error.message || 'No se pudo importar';
+        }
+      }
+    };
+
     await Promise.all(Array.from({ length: Math.min(3, rows.length) }, worker));
     await context.syncGoogle();
     context.render();
+
     if (failed) {
       context.toast(`${completed} importados · ${failed} con error`);
       renderPreview();
-      button.disabled = false;
-      button.textContent = originalLabel;
       return;
     }
+
     dialog.close();
     context.toast(`${completed} pendiente${completed === 1 ? '' : 's'} importado${completed === 1 ? '' : 's'}`);
   } catch (error) {
     context.toast(error.message || 'No se pudo completar la importación');
-    button.disabled = false;
-    button.textContent = originalLabel;
+    renderPreview();
+  } finally {
+    const remaining = importRows.filter(row => !row.error && !row.imported && !(skipDuplicates && row.duplicate));
+    button.disabled = remaining.length === 0;
+    button.textContent = remaining.length ? `Importar ${remaining.length} pendiente${remaining.length === 1 ? '' : 's'}` : 'Nada para importar';
   }
 }
