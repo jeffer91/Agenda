@@ -1,3 +1,5 @@
+import { downloadTaskMatrix, openTaskExcelImport } from './task-excel.js';
+
 const API = 'https://ep-nameless-sunset-ak959lh3.apirest.c-3.us-west-2.aws.neon.tech/agenda/rest/v1';
 const TIME_ZONE = 'America/Guayaquil';
 const ECUADOR_OFFSET = '-05:00';
@@ -404,7 +406,7 @@ function form(title, fields) {
 entity.addEventListener('close', () => {
   if (!resolveForm) return;
   const result = entity.returnValue === 'default'
-    ? Object.fromEntries(new FormData($('#entityForm')).entries())
+    ? Object.fromEntries(new FormData($('#entityForm').entries()))
     : null;
   resolveForm(result);
   resolveForm = null;
@@ -430,6 +432,22 @@ async function act(type, el) {
 
   if (type === 'sync') {
     authGoogle();
+    return;
+  }
+
+  if (type === 'task-template') {
+    await downloadTaskMatrix();
+    toast('Matriz de pendientes descargada');
+    return;
+  }
+
+  if (type === 'task-import') {
+    if (!S.access) {
+      toast('Primero pulsa Sincronizar para autorizar Google Tasks');
+      authGoogle();
+      return;
+    }
+    await openTaskExcelImport({ tasks: S.tasks, gf, syncGoogle, render, toast });
     return;
   }
 
@@ -835,7 +853,7 @@ function render() {
   const views = {
     today,
     calendar: () => `${callout()}${head('Calendario', 'Próximos 7 días · Google Calendar', '<button class="btn" data-action="event">Nuevo evento</button>')}<section class="card accent-card accent-events">${events(7)}</section>`,
-    tasks: () => `${callout()}${head('Pendientes', 'Google Tasks', '<button class="btn" data-action="task">Nuevo pendiente</button>')}<section class="card accent-card accent-tasks">${tasks()}</section>`,
+    tasks: () => `${callout()}${head('Pendientes', 'Google Tasks', '<div class="actions"><button class="btn secondary" data-action="task-template">↓ Matriz Excel</button><button class="btn secondary" data-action="task-import">↑ Subir Excel</button><button class="btn" data-action="task">Nuevo pendiente</button></div>')}<section class="card accent-card accent-tasks">${tasks()}</section>`,
     projects,
     goals,
     journal,
